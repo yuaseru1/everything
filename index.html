@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<title>Everything</title>
+<meta charset="utf-8" />
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="manifest" href="/app.webmanifest" />
+<link rel="icon" type="image/png" href="/icon.png" />
+<link rel="apple-touch-icon" href="/icon.png" />
+<style>
+:root { --primary: #EC4899; --gray: #9CA3AF; --foreground: #222222; --background: white; }
+body { font-family: sans-serif; font-size: 18px; margin: 0; padding: 16px; color: var(--foreground); background: var(--background); }
+* { box-sizing: border-box; }
+a { color: var(--primary); text-decoration: none; cursor: pointer; }
+a:hover { text-decoration: underline; }
+img { max-width: 100%; }
+h1 { font-size: 28px; }
+.label { display: block; margin-bottom: 4px; font-size: 16px; }
+.input { padding: 6px 12px; min-width: 200px; border: 1px solid var(--foreground); background: var(--background); color: var(--foreground); font-size: 16px; outline: 0; border-radius: 0; }
+.button { color: white; background: var(--primary); padding: 8px 12px; border: 0; font-size: 16px; cursor: pointer; }
+.container { max-width: 768px; }
+.error { color: red; }
+.mb-2 { margin-bottom: 8px; }
+.mb-4 { margin-bottom: 16px; }
+.mr-2 { margin-right: 8px; }
+.block { display: block; }
+.flex { display: flex; }
+.flex-1 { flex: 1; }
+.items-center { align-items: center; }
+.text-right { text-align: right; }
+.w-full { width: 100%; }
+.hidden { display: none; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media only screen and (max-width: 768px) {
+  .hidden-phone { display: none; }
+}
+@media (prefers-color-scheme: dark) {
+  :root { --foreground: white; --background: #222222; }
+}
+</style>
+<div id="root" style="min-height:100vh">
+  <div id="loading" style="padding:20vh 0;text-align:center">Loading...</div>
+</div>
+<script>
+function newId() {
+  const enc = "0123456789ABCDEFGHJKMNPQRSTVWXYZabcdefghkmnpqrstvwxyz";
+  let str = "";
+  for (let len = 6; len > 0; len--) {
+    const rand = Math.floor(Math.random() * enc.length);
+    str = enc.charAt(Math.min(rand, enc.length - 1)) + str;
+  }
+  let now = Date.now();
+  for (let len = 10; len > 0; len--) {
+    const mod = now % enc.length;
+    str = enc.charAt(mod) + str;
+    now = (now - mod) / enc.length;
+  }
+  return str;
+}
+function idTimestamp(id) {
+  const enc = "0123456789ABCDEFGHJKMNPQRSTVWXYZabcdefghkmnpqrstvwxyz";
+  let now = 1;
+  for (let i = 0; i < 10; i++) {
+    now += enc.indexOf(id[10 - 1 - i]) * Math.pow(enc.length, i);
+  }
+  return now;
+}
+async function rpc(body) {
+  const response = await fetch("/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (response.status === 200) {
+    return await response.json();
+  } else {
+    try {
+      throw new Error((await response.json()).error);
+    } catch (e) {
+      throw new Error("Server error " + response.status);
+    }
+  }
+}
+function stringToBinary(input) {
+  return new TextEncoder().encode(input);
+}
+function binaryToString(input) {
+  return new TextDecoder().decode(input);
+}
+function base64ToBinary(input) {
+  input = atob(input);
+  const out = new Uint8Array(input.length);
+  for (let i = 0; i < out.length; i++) {
+    out[i] = input.charCodeAt(i);
+  }
+  return out;
+}
+function binaryToBase64(input) {
+  return btoa(String.fromCharCode.apply(null, new Uint8Array(input)));
+}
+async function cryptoRandom(length) {
+  const buf = new Uint8Array(length);
+  await crypto.getRandomValues(buf);
+  return binaryToBase64(buf);
+}
+async function cryptoHash(data) {
+  const buf = await crypto.subtle.digest("SHA-256", stringToBinary(data));
+  return binaryToBase64(buf);
+}
+async function cryptoKeyFromPassword(password, salt) {
+  const key = await crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt: base64ToBinary(salt),
+      iterations: 100000,
+      hash: "SHA-256",
+    },
+    await crypto.subtle.importKey(
+      "raw",
+      stringToBinary(password),
+      { name: "PBKDF2" },
+      false,
+      ["deriveKey"]
+    ),
+    { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]
+  );
+  return binaryToBase64(await crypto.subtle.exportKey("raw", key));
+}
+function cryptoKeyFromRaw(rawKey) {
+  return crypto.subtle.importKey(
+    "raw", base64ToBinary(rawKey),
+    { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]
+  );
+}
+async function cryptoEncrypt(rawKey, value, raw = false) {
+  const iv = crypto.getRandomValues(new Uint8Array(96));
+  const key = await cryptoKeyFromRaw(rawKey);
+  value = raw ? value : stringToBinary(value);
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, key, value);
+  return ["1", binaryToBase64(iv), binaryToBase64(encrypted)].join(".");
+}
+async function cryptoDecrypt(rawKey, value, raw = false) {
+  const parts = value.split(".");
+  const iv = base64ToBinary(parts[1]);
+  const buf = base64ToBinary(parts[2]);
+  const key = await cryptoKeyFromRaw(rawKey);
+  const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, key, buf);
+  return raw ? decrypted : binaryToString(decrypted);
+}
+let dbPromise;
+function dbWrap(req) {
+  return new Promise((resolve, reject) => {
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => resolve(req.result);
+  });
+}
+function dbInit() {
+  if (dbPromise) return dbPromise;
+  const req = indexedDB.open("everything", 1);
+  req.onupgradeneeded = () => {
+    req.result.createObjectStore("datums"); // [id, rev, key, val]
+    req.result.createObjectStore("blocks"); // [hash, val]
+  };
+  dbPromise = dbWrap(req);
+  return dbPromise;
+}
+function dbTransact(store, type, callback) {
+  return new Promise(async (resolve, reject) => {
+    let result;
+    let transaction = await dbInit().transaction(store, type);
+    transaction.oncomplete = async () => resolve(await result);
+    transaction.onabort = transaction.onerror = () => reject(transaction.error);
+    result = callback(transaction.objectStore(store));
+  });
+}
+async function dbClear() {
+  await dbTransact("datums", "readwrite", (store) => store.clear());
+  await dbTransact("blocks", "readwrite", (store) => store.clear());
+}
+
+let state = {
+  username: null,
+  masterKey: null,
+  datums: [],
+};
+
+async function dbChange(id, changes) {
+  const rev = newId();
+  const datums = [];
+  for (let k of Object.keys(changes)) {
+    const v = await cryptoEncrypt(state.masterKey, JSON.stringify(changes[k]));
+    const d = [id, rev, k, v];
+    datums.push(d);
+  }
+  datums.forEach(d => state.datums.push(d));
+  await dbTransact("datums", "readwrite", (store) => {
+    datums.forEach((d) => store.put(d, d[1] + d[0] + d[2]));
+  });
+}
+
+(async () => {
+  try {
+    let username = localStorage.username;
+    if (!username) username = prompt("Username");
+    if (!username) return loading.innerText = "Missing username";
+    let password;
+    if (!password) password = prompt("Password");
+    if (!password) return loading.innerText = "Missing password";
+    const usernameHash = await cryptoHash(username);
+    const passwordKey = await cryptoKeyFromPassword(password, usernameHash);
+    let masterKey;
+    if (localStorage.masterKeyEncrypted) {
+      masterKey = await cryptoDecrypt(passwordKey, localStorage.masterKeyEncrypted);
+    } else {
+      localStorage.username = username;
+      masterKey = await cryptoRandom(32);
+      localStorage.masterKeyEncrypted = await cryptoEncrypt(passwordKey, masterKey);
+    }
+    state.username = username;
+    state.masterKey = masterKey;
+    const datums = await dbTransact("datums", "readonly", (store) => dbWrap(store.getAll()));
+    datums.sort((a, b) => a[1] > b[1]);
+    for (let d of datums) {
+      d[3] = JSON.parse(await cryptoDecrypt(masterKey, d[3]));
+      dataums.push(d);
+      console.log(d);
+    }
+    root.innerText = [masterKey].join('\n');
+  } catch (e) {
+    console.error("Error", e);
+    loading.innerText = "Error decrypting";
+    loading.classList.add("error");
+  }
+})();
+</script>
