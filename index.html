@@ -157,7 +157,7 @@ function dbInit() {
   if (dbPromise) return dbPromise;
   const req = indexedDB.open("everything", 1);
   req.onupgradeneeded = () => {
-    req.result.createObjectStore("datums"); // [id, rev, key, val]
+    req.result.createObjectStore("datums"); // [id, rev, key, val, synced]
     req.result.createObjectStore("blocks"); // [hash, val]
   };
   dbPromise = dbWrap(req);
@@ -166,7 +166,7 @@ function dbInit() {
 function dbTransact(store, type, callback) {
   return new Promise(async (resolve, reject) => {
     let result;
-    let transaction = await dbInit().transaction(store, type);
+    let transaction = (await dbInit()).transaction(store, type);
     transaction.oncomplete = async () => resolve(await result);
     transaction.onabort = transaction.onerror = () => reject(transaction.error);
     result = callback(transaction.objectStore(store));
@@ -188,7 +188,7 @@ async function dbChange(id, changes) {
   const datums = [];
   for (let k of Object.keys(changes)) {
     const v = await cryptoEncrypt(state.masterKey, JSON.stringify(changes[k]));
-    const d = [id, rev, k, v];
+    const d = [id, rev, k, v, false];
     datums.push(d);
   }
   datums.forEach(d => state.datums.push(d));
@@ -224,7 +224,62 @@ async function dbChange(id, changes) {
       dataums.push(d);
       console.log(d);
     }
-    root.innerText = [masterKey].join('\n');
+    state.datums = datums;
+    root.innerHtml = `<pre>`+JSON.stringify(datums, null, 2)+`</pre>`;
+
+    // start sync
+    const sync = async () => {
+      try {
+        const checkpoint = parseInt(localStorage.checkpoint ||'0');
+        const res = await rpc({ gets: [checkpoint, checkpoint +1], });
+        const newDatumsState = [];
+        const newDatumsStore = [];
+        for (let rd of (res.gets[0]+"\n"+res.gets[1]).split("\n")) {
+          try {
+            if (rd == "") continue;
+            const d = JSON.parse(rd);
+            // try decrypting to check if valid / from us
+            const value = await cryptoDecrypt(state.masterKey, d[3]);
+            newDatumsStore.push([...d, true]);
+            state.datums.push([d[0], d[1], d[2], value, true]);
+          } catch (e) {
+            console.log("Sync garbage", rd, e);
+          }
+        }
+        await dbTransact("datums", "readwrite", (store) => {
+          newDatumsStore.forEach(d => store.put(d, d[1] + d[0] + d[2]));
+        });
+        newDatumsState.forEach(d => state.datums.push(d));
+        if (res.gets[1] != "") {
+          checkpoint++;
+          localStorage.checkpoint = checkpoint;
+          // keep syncing until we're at tip
+          // before appending any new changes
+          sync();
+          return;
+        }
+        if (res.gets[0].length > 250000) {
+          checkpoint++;
+          localStorage.checkpoint = checkpoint;
+        }
+        const newDatums = state.datums.filter(d => !d[4]);
+        await rpc({
+          sets: {
+            [checkpoint]: newDatums.map(d => JSON.stringify(d.slice(0, 4))).join('\n')
+          }
+        });
+        await dbTransact("datums", "readwrite", (store) => {
+          newDatums.forEach((d) => {
+            d[4] = true;
+            store.put(d, d[1] + d[0] + d[2])
+          });
+        });
+      } catch(e) {
+        console.error("Sync error", e);
+      }
+    }
+    sync();
+    setInterval(sync, 15000);
   } catch (e) {
     console.error("Error", e);
     loading.innerText = "Error decrypting";
