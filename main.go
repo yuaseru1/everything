@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -38,21 +39,18 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	if r.Method == "POST" {
-		data := struct {
-			Gets []string
-			Sets map[string]string
-		}{}
-		check(json.NewDecoder(r.Body).Decode(&data))
-		gets := []interface{}{}
-		for _, k := range data.Gets {
-			gets = append(gets, awsGet(k))
-		}
-		for k, v := range data.Sets {
-			ov := awsGet(k)
-			awsPut(k, append(ov, []byte(v)...))
-		}
+		user := r.URL.Query().Get("user")
+		body, err := ioutil.ReadAll(r.Body)
+		check(err)
+		r.Body.Close()
+		checkpoint, err := strconv.Atoi(r.URL.Query().Get("checkpoint"))
+		check(err)
+		data := string(awsGet(user)) + string(body)
+		awsPut(user, []byte(data))
+		datums := strings.Split(data, "\n")
+		fmt.Println("sync", user, checkpoint, string(body), len(datums))
 		w.Header().Set("Content-Type", "application/json")
-		check(json.NewEncoder(w).Encode(map[string]interface{}{"gets": gets}))
+		check(json.NewEncoder(w).Encode(datums[checkpoint:]))
 		return
 	}
 	if r.URL.Path == "/app.webmanifest" {
