@@ -18,7 +18,7 @@ h1 { font-size: 28px; }
 .label { display: block; margin-bottom: 4px; font-size: 16px; }
 .input { padding: 8px; min-width: 200px; border: none; background: transparent; color: var(--foreground); line-height: 20px; font-size: 16px; font-family: var(--font); outline: 0; border-radius: 0; }
 .button { color: var(--background); background: var(--foreground); padding: 8px 12px; border: 0; font-size: 16px; cursor: pointer; }
-.container { max-width: 640px; margin: 0 auto; border: 1px solid var(--border); border-width: 0 1px 0 1px; }
+.container { max-width: 800px; margin: 0 auto; border: 1px solid var(--border); border-width: 0 1px 0 1px; }
 .error { color: red; }
 .p-2 { padding: 8px; }
 .mb-2 { margin-bottom: 8px; }
@@ -96,6 +96,18 @@ async function rpc(apiKey, checkpoint, datums) {
     }
   }
 }
+function intToBinary(input) {
+  var result = [];
+  while (input > 0) {
+    result.push(input & 0xff);
+    input >>= 8;
+  }
+  result.reverse();
+  while (result.length % 8 !== 0) {
+    result.unshift(0);
+  }
+  return Uint8Array.from(result);
+}
 function stringToBinary(input) {
   return new TextEncoder().encode(input);
 }
@@ -161,6 +173,52 @@ async function cryptoDecrypt(rawKey, value, raw = false) {
   const key = await cryptoKeyFromRaw(rawKey);
   const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, key, buf);
   return raw ? decrypted : binaryToString(decrypted);
+}
+function decodeBase32(s) {
+  let a = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567=";
+  let x,
+    bits = 0,
+    o = "",
+    len = s.length;
+  s = s.toUpperCase();
+  for (let i = 0; i < len; i += 1) {
+    let v = a.indexOf(s.charAt(i));
+    if (v < 0 || v >= 32) continue;
+    x = (x << 5) | v;
+    bits += 5;
+    if (bits < 8) continue;
+    o = o + String.fromCharCode((x >> (bits - 8)) & 0xff);
+    bits -= 8;
+  }
+  if (bits > 0) {
+    let c = ((x << (8 - bits)) & 0xff) >> (8 - bits);
+    if (c !== 0) o = o + String.fromCharCode(c);
+  }
+  return o;
+}
+async function generateTotp(secret, digits = 6) {
+  function stringToBinary8(str) {
+    var buf = new ArrayBuffer(str.length);
+    var bufView = new Uint8Array(buf);
+    for (var i = 0, strLen = str.length; i < strLen; i++) {
+      bufView[i] = str.charCodeAt(i);
+    }
+    return buf;
+  }
+  var s = stringToBinary8(decodeBase32(secret));
+  var input = intToBinary(Math.floor(Date.now() / 1000 / 30));
+  var alg = { name: "HMAC", hash: "SHA-1" };
+  var key = await crypto.subtle.importKey("raw", s, alg, true, ["sign"]);
+  var val = new Uint8Array(await crypto.subtle.sign(alg, key, input));
+  var offset = val[val.length - 1] & 0xf;
+  var code =
+    ((val[offset] & 0x7f) << 24) |
+    ((val[offset + 1] & 0xff) << 16) |
+    ((val[offset + 2] & 0xff) << 8) |
+    (val[offset + 3] & 0xff);
+  var str = (code % 10 ** digits).toString();
+  while (str.length < digits) str = "0" + str;
+  return str;
 }
 let dbPromise;
 function dbWrap(req) {
@@ -365,7 +423,7 @@ function redraw() {
 }
 
 function App() {
-  const hash = window.location.hash.slice(1);
+  const hash = decodeURIComponent(window.location.hash.slice(1));
   let initialId = null;
   let initialSearch = "";
   if (hash.length == 16 && hash.startsWith("001")) {
@@ -383,7 +441,25 @@ function App() {
   const entity = id ? state.entities[id] : null;
 
   let results = Object.values(state.entities);
-  if (search) results = results.filter(e => (e.title||"").toLowerCase().includes(search.toLowerCase()));
+  const searchKeywords = [];
+  const searchFields = [{name: "title", kind: "text"}];
+  for (let s of search.split(" ")) {
+    s = s.trim();
+    if (!s) continue;
+    if (s[0] == ":") {
+      const [name, kind] = s.slice(1).split(":");
+      searchFields.push({ name, kind: kind || "text" });
+      continue;
+    }
+    if (s.includes(":")) {
+      const [attribute, value] = s.split(":");
+      results = results.filter(e => e[attribute] == value);
+      continue;
+    }
+    searchKeywords.push(s);
+  }
+  results = results.filter(e => searchKeywords.every(k => ((e.title||"")+(e.content||"")).toLowerCase().includes(k.toLowerCase())));
+  
   results.sort((a, b) => a.rev < b.rev);
 
   let attributes = [];
@@ -410,12 +486,7 @@ function App() {
     }
     setTitle(entity.title||"");
     setContent(entity.content||"");
-    updateAttributes();
   }, [id]);
-
-  function updateAttributes() {
-    //setAttributes();
-  }
 
   function onSearch(search) {
     setSearch(search);
@@ -433,7 +504,6 @@ function App() {
   async function onNewAttribute() {
     if (!newAttribute) return;
     await dbChange(id, {[newAttribute]: newValue});
-    updateAttributes();
     setNewAttribute("");
     setNewValue("");
   }
@@ -447,7 +517,6 @@ function App() {
       delete changes[newAttribute];
     }
     await dbChange(id, changes);
-    updateAttributes();
   }
 
   return h("div", {k: "container"}, [
@@ -512,12 +581,39 @@ function App() {
       ]) : null,
     ]) : h("div", {}, results.map(e => h("div", {
       k: "result p-2 border-b",
+      key: e.id,
+      style: "display: grid;gap:4px;grid-template-columns: repeat("+searchFields.length+", 1fr);",
       onmousedown: () => setId(e.id),
-    }, [
-      h("div", {k: "mb-2", style:"font-size:18px;font-weight:bold;cursor:pointer;"}, e.title),
-      h("div", {k: "truncate"}, e.content || "-"),
-    ])))
+    }, searchFields.map(f => h(
+        "div",
+        {
+          k: "truncate",
+          ...(f.name == "title" ? {style: "font-size:18px;font-weight:bold;"} : {}),
+          ...(f.kind == "number" ? {style: "text-align: right;font-family: monospace"} : {})
+        },
+        f.kind == "link"
+          ? h("a", {
+            href: e[f.name],
+            target: "_blank",
+            onmousedown: e => e.stopPropagation()
+          }, e[f.name]||"-")
+          : f.kind == "otp"
+            ? h(Otp, {secret: e[f.name]})
+            : (e[f.name] || "-")
+    )))))
   ]);
+}
+
+function Otp({ secret }) {
+  const [otp, setOtp] = useState("gen otp");
+  async function onGenerate(e) {
+    e.stopPropagation();
+    e.preventDefault();
+    const v = await generateTotp(secret);
+    setOtp(v);
+    navigator.clipboard.writeText(v);
+  }
+  return h("a", {onmousedown: onGenerate}, otp);
 }
 
 async function onSetup(e) {
@@ -612,6 +708,7 @@ async function onSetup(e) {
   if (localStorage.username) {
     usernameField.style.display = 'none';
   }
+  console.log(localStorage.username, usernameField.style.display)
 
   if (window.location.hash === "#signout") {
     localStorage.checkpoint = "";
