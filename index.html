@@ -694,12 +694,14 @@ function App() {
             onmousedown: e => e.stopPropagation()
           }, e[f.name]||"-")
           : f.kind == "otp"
-            ? h(Otp, {secret: e[f.name]})
-            : f.name == "created"
-            ? formatDatetime(idTimestamp(e.id))
-            : f.name == "updated"
-            ? formatDatetime(idTimestamp(e.rev))
-            : (e[f.name] || "-")
+          ? h(Otp, {secret: e[f.name]})
+          : f.kind == "password"
+          ? h(Password, {secret: e[f.name]})
+          : f.name == "created"
+          ? formatDatetime(idTimestamp(e.id))
+          : f.name == "updated"
+          ? formatDatetime(idTimestamp(e.rev))
+          : (e[f.name] || "-")
     ))))))
   }
 
@@ -722,8 +724,19 @@ function App() {
   ]);
 }
 
+function Password({ secret }) {
+  const [value, setValue] = useState("pass");
+  function onCopy(e) {
+    e.stopPropagation();
+    e.preventDefault();
+    setValue(secret);
+    navigator.clipboard.writeText(secret);
+  }
+  return h("a", {onmousedown: onCopy}, value);
+}
+
 function Otp({ secret }) {
-  const [otp, setOtp] = useState("gen otp");
+  const [otp, setOtp] = useState("otp");
   async function onGenerate(e) {
     e.stopPropagation();
     e.preventDefault();
