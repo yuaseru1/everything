@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" href="/icon.png" />
 <style>
 :root { --font: sans-serif; --primary: #EC4899; --gray: #9CA3AF; --foreground: #222222; --background: white; --surface: #f9f9f9; --border: #eeeeee; }
-body { font-family: var(--font); font-size: 18px; margin: 0; color: var(--foreground); background: var(--background); }
+body { font-family: var(--font); font-size: 16px; margin: 0; color: var(--foreground); background: var(--background); }
 * { box-sizing: border-box; }
 a { color: var(--primary); text-decoration: none; cursor: pointer; }
 a:hover { text-decoration: underline; }
@@ -628,7 +628,7 @@ function App() {
       ]),
       h("textarea", {
         k: "input border-b",
-        style: "min-height:400px;resize:vertical;",
+        style: "min-height:500px;resize:vertical;",
         placeholder: "content",
         value: content,
         oninput: e => setContent(e.target.value),
@@ -690,6 +690,10 @@ function App() {
           }, e[f.name]||"-")
           : f.kind == "otp"
             ? h(Otp, {secret: e[f.name]})
+            : f.name == "created"
+            ? formatDatetime(idTimestamp(e.id))
+            : f.name == "updated"
+            ? formatDatetime(idTimestamp(e.rev))
             : (e[f.name] || "-")
     ))))))
   }
