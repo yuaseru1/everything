@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -39,7 +38,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	if r.Method == "POST" {
-		user := r.URL.Query().Get("user")
+		user := strings.Replace(r.URL.Query().Get("user"), "=", "", -1)
 		body, err := ioutil.ReadAll(r.Body)
 		check(err)
 		r.Body.Close()
@@ -48,9 +47,9 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		data := string(awsGet(user)) + string(body)
 		awsPut(user, []byte(data))
 		datums := strings.Split(data, "\n")
-		fmt.Println("sync", user, checkpoint, string(body), len(datums))
 		w.Header().Set("Content-Type", "application/json")
-		check(json.NewEncoder(w).Encode(datums[checkpoint:]))
+		w.Write([]byte(strings.Join(datums[checkpoint:], "\n")))
+		log.Println("synced", user, checkpoint, len(datums), len(body))
 		return
 	}
 	if r.URL.Path == "/app.webmanifest" {
@@ -58,6 +57,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"name":"Everything","background_color":"white"}`))
 		return
 	}
+	log.Println("served index")
 	w.Header().Set("Content-Type", "text/html")
 	w.Write(assetIndex)
 }
@@ -78,19 +78,25 @@ func check(err error) {
 func awsGet(key string) []byte {
 	target := fmt.Sprintf("https://%s.s3.amazonaws.com/%s",
 		os.Getenv("AWS_BUCKET"), key)
-	return aws("GET", target, nil, nil)
+	bs, err := aws("GET", target, nil, nil)
+	if strings.Contains(fmt.Sprintf("%v", err), "NoSuchKey") {
+		return nil
+	}
+	check(err)
+	return bs
 }
 func awsPut(key string, value []byte) {
-	aws(
+	_, err := aws(
 		"PUT",
 		fmt.Sprintf("https://%s.s3.amazonaws.com/%s",
 			os.Getenv("AWS_BUCKET"), key),
 		map[string]string{"content-type": or(http.DetectContentType(value), "application/octet-stream")},
 		value,
 	)
+	check(err)
 }
 
-func aws(method, target string, headers map[string]string, body []byte) []byte {
+func aws(method, target string, headers map[string]string, body []byte) ([]byte, error) {
 	var awsRegion = "us-east-1"
 	var awsService = "s3"
 	var awsAccessKey = os.Getenv("AWS_ACCESS_KEY")
@@ -141,16 +147,18 @@ func aws(method, target string, headers map[string]string, body []byte) []byte {
 	req.Header.Set("Authorization", authorizationHeader)
 
 	res, err := http.DefaultClient.Do(req)
-	check(err)
+	if err != nil {
+		return nil, err
+	}
 
 	resBody, err := ioutil.ReadAll(res.Body)
 	check(err)
 	res.Body.Close()
 
 	if res.StatusCode != 200 {
-		panic(fmt.Errorf("aws error: %d: %s", res.StatusCode, string(resBody)))
+		return nil, fmt.Errorf("aws error: %d: %s", res.StatusCode, string(resBody))
 	}
-	return resBody
+	return resBody, nil
 }
 
 func hashAndEncode(s []byte) string {

@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" href="/icon.png" />
 <link rel="apple-touch-icon" href="/icon.png" />
 <style>
-:root { --font: "Berkeley Mono", sans-serif; --primary: #EC4899; --gray: #9CA3AF; --foreground: #222222; --background: white; --surface: #f9f9f9; }
+:root { --font: sans-serif; --primary: #EC4899; --gray: #9CA3AF; --foreground: #222222; --background: white; --surface: #f9f9f9; --border: #eeeeee; }
 body { font-family: var(--font); font-size: 18px; margin: 0; color: var(--foreground); background: var(--background); }
 * { box-sizing: border-box; }
 a { color: var(--primary); text-decoration: none; cursor: pointer; }
@@ -16,10 +16,11 @@ a:hover { text-decoration: underline; }
 img { max-width: 100%; }
 h1 { font-size: 28px; }
 .label { display: block; margin-bottom: 4px; font-size: 16px; }
-.input { padding: 6px 12px; min-width: 200px; border: 0; background: var(--surface); color: var(--foreground); font-size: 16px; font-family: var(--font); outline: 0; border-radius: 0; }
-.button { color: var(--foreground); background: var(--primary); padding: 8px 12px; border: 0; font-size: 16px; cursor: pointer; }
-.container { max-width: 640px; margin: 0 auto; padding: 16px; }
+.input { padding: 8px; min-width: 200px; border: none; background: transparent; color: var(--foreground); line-height: 20px; font-size: 16px; font-family: var(--font); outline: 0; border-radius: 0; }
+.button { color: var(--background); background: var(--foreground); padding: 8px 12px; border: 0; font-size: 16px; cursor: pointer; }
+.container { max-width: 640px; margin: 0 auto; border: 1px solid var(--border); border-width: 0 1px 0 1px; }
 .error { color: red; }
+.p-2 { padding: 8px; }
 .mb-2 { margin-bottom: 8px; }
 .mb-4 { margin-bottom: 16px; }
 .mr-2 { margin-right: 8px; }
@@ -32,6 +33,10 @@ h1 { font-size: 28px; }
 .w-full { width: 100%; }
 .hidden { display: none; }
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.border-r, .border-b { border: 0 solid var(--border); }
+.border-r { border-right-width: 1px; }
+.border-b { border-bottom-width: 1px; }
+.result:hover { cursor: pointer; background: var(--surface); }
 @media only screen and (max-width: 768px) {
   .hidden-phone { display: none; }
 }
@@ -66,14 +71,19 @@ function idTimestamp(id) {
   }
   return now;
 }
+function formatDatetime(t) {
+  const d = new Date(t);
+  const pad = v => ('0' + v).slice(-2);
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 async function rpc(apiKey, checkpoint, datums) {
   const response = await fetch(`/?user=${apiKey}&checkpoint=${checkpoint}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: datums.length > 0 ? datums.map( d => JSON.stringify(d)).join('\n') + '\n' : '',
+    body: datums.length > 0 ? datums.map(d => JSON.stringify(d)).join('\n') + '\n' : '',
   });
   if (response.status === 200) {
-    return (await response.text()).split('\n').map(d => JSON.parse(d));
+    return (await response.text()).split('\n').filter(d => d).map(d => JSON.parse(d));
   } else {
     try {
       throw new Error((await response.json()).error);
@@ -189,6 +199,7 @@ let state = {
 };
 
 async function dbChange(id, changes) {
+  console.log("CHANGE", id, changes);
   const rev = newId();
   const datums = [];
   for (let k of Object.keys(changes)) {
@@ -208,6 +219,9 @@ function dbIndex(d) {
   const id = d[1] + d[0] + d[2];
   if (!state.datumsById[id]) {
     state.datums.push(d);
+  } else {
+    // update "synced" is the only use case for indexing an existing datum
+    state.datums.find(d2 => d[0] == d2[0] && d[1] == d2[1] && d[2] == d2[2])[4] = d[4];
   }
   state.datumsById[id] = d;
   if (d[1] > (state.entitiesRevs[d[0]+d[2]] || '')) {
@@ -227,6 +241,16 @@ function dbIndex(d) {
 }
 
 (async () => {
+  if (window.location.hash === "#signout") {
+    localStorage.checkpoint = "";
+    localStorage.username = "";
+    localStorage.masterKeyEncrypted = "";
+    await dbClear();
+    window.location.hash = "";
+    window.location.reload();
+    return;
+  }
+
   try {
     let username = localStorage.username;
     if (!username) username = prompt("Username");
@@ -239,7 +263,8 @@ function dbIndex(d) {
     const passwordSalt = await cryptoHash("password" + usernameHash);
     const apiKey = await cryptoKeyFromPassword(password, apiSalt);
     const passwordKey = await cryptoKeyFromPassword(password, passwordSalt);
-    let masterKey;
+    let masterKey = passwordKey;
+    /*
     if (localStorage.masterKeyEncrypted) {
       masterKey = await cryptoDecrypt(passwordKey, localStorage.masterKeyEncrypted);
     } else {
@@ -247,6 +272,7 @@ function dbIndex(d) {
       masterKey = await cryptoRandom(32);
       localStorage.masterKeyEncrypted = await cryptoEncrypt(passwordKey, masterKey);
     }
+    */
     state.apiKey = apiKey;
     state.username = username;
     state.masterKey = masterKey;
@@ -262,22 +288,28 @@ function dbIndex(d) {
     const sync = async () => {
       try {
         const checkpoint = parseInt(localStorage.checkpoint ||'0');
-        const setDatums = state.datums.filter(d => !d[4]).map(d => d.slice(0, 4));;
+        const setDatums = state.datums.filter(d => !d[4]).map(d => d.slice(0, 4));
+        console.log("TO SET", setDatums);
+        for (let d of setDatums) {
+          d[3] = await cryptoEncrypt(state.masterKey, JSON.stringify(d[3]));
+        }
         const newDatums = await rpc(state.apiKey, checkpoint, setDatums);
         const newDatumsStore = [];
         for (let d of newDatums) {
           try {
             // try decrypting to check if valid / from us
-            const value = await cryptoDecrypt(state.masterKey, d[3]);
+            const value = JSON.parse(await cryptoDecrypt(state.masterKey, d[3]));
             newDatumsStore.push([...d, true]);
             dbIndex([d[0], d[1], d[2], value, true]);
           } catch (e) {
-            console.log("Sync garbage", rd, e);
+            console.log("sync garbage", d, e);
           }
         }
         await dbTransact("datums", "readwrite", (store) => {
           newDatumsStore.forEach(d => store.put(d, d[1] + d[0] + d[2]));
         });
+        localStorage.checkpoint = checkpoint + newDatums.length;
+        console.log("synced", "checkpoint", checkpoint, "sets", setDatums.length, "gets", newDatums.length);
       } catch(e) {
         console.error("Sync error", e);
       }
@@ -404,24 +436,71 @@ function render(vlist, dom, ns) {
 }
 
 function redraw() {
-  render(h(App), document.getElementById("root"));
+  try {
+    render(h(App), document.getElementById("root"));
+  } catch (e) {
+    console.error("Error", e);
+    loading.innerText = e.message;
+    loading.classList.add("error");
+  }
 }
 
 function App() {
-  const [id, setId] = useState();
-  const [search, setSearch] = useState("");
+  const hash = window.location.hash.slice(1);
+  let initialId = null;
+  let initialSearch = "";
+  if (hash.length == 16 && hash.startsWith("001")) {
+    initialId = hash;
+  } else if (hash.length > 0) {
+    initialSearch = hash;
+  }
+  const [id, setId] = useState(initialId);
+  const [search, setSearch] = useState(initialSearch);
   const [searchFocused, setSearchFocused] = useState(false);
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+  const [newAttribute, setNewAttribute] = useState("");
+  const [newValue, setNewValue] = useState("");
+  const entity = id ? state.entities[id] : null;
 
   let results = Object.values(state.entities);
-  if (search) results = results.filter(e => e.title.toLowerCase().contains(search.toLowerCase()));
+  if (search) results = results.filter(e => (e.title||"").toLowerCase().includes(search.toLowerCase()));
   results.sort((a, b) => a.rev < b.rev);
 
+  let attributes = [];
+  if (entity) {
+    const exl = ["id", "rev", "title", "content"];
+    attributes = Object.keys(entity);
+    attributes = attributes.filter(k => entity[k] != null);
+    attributes = attributes.filter(k => !exl.includes(k));
+    attributes.sort();
+  }
+
   useEffect(() => {
+    if (id) return;
     document.getElementById("search").focus();
   }, []);
 
+  useEffect(() => {
+    if (!id) return;
+    window.location.hash = id;
+    if (!entity) {
+      setTitle("");
+      setContent("");
+      return;
+    }
+    setTitle(entity.title||"");
+    setContent(entity.content||"");
+    updateAttributes();
+  }, [id]);
+
+  function updateAttributes() {
+    //setAttributes();
+  }
+
   function onSearch(search) {
     setSearch(search);
+    window.location.hash = search;
   }
 
   function onNew() {
@@ -432,22 +511,100 @@ function App() {
     dbChange(id, {[attribute]: value});
   }
 
+  async function onNewAttribute() {
+    if (!newAttribute) return;
+    await dbChange(id, {[newAttribute]: newValue});
+    updateAttributes();
+    setNewAttribute("");
+    setNewValue("");
+  }
+
+  async function onUpdateAttribute(oldAttribute, newAttribute, value) {
+    const changes = {[newAttribute]: value};
+    if (oldAttribute != newAttribute) {
+      changes[oldAttribute] = null;
+    }
+    if (newAttribute == "") {
+      delete changes[newAttribute];
+    }
+    await dbChange(id, changes);
+    updateAttributes();
+  }
+
   return h("div", {k: "container"}, [
-    h("div", {k: "flex gap-2 mb-4"}, [
-    h("input", {id: "search", k: "input flex-1", placeholder: "Search...", value: search, oninput: e => onSearch(e.target.value), onfocus: () => setSearchFocused(true), onblur: () => setSearchFocused(false)}),
-      h("button", {k: "button", onclick: onNew}, "⨁"),
+    h("div", {k: "flex border-b"}, [
+    h("input", {id: "search", k: "input flex-1", placeholder: "search...", value: search, oninput: e => onSearch(e.target.value), onfocus: () => setSearchFocused(true), onblur: () => setSearchFocused(false)}),
+      h("button", {k: "button", onclick: onNew}, "new"),
     ]),
-    id && !searchFocused ? h("div", {k: "flex gap-2", style:"flex-direction:column;"}, [
-    h("input", {k: "input", style: "font-size:22px;", placeholder: "Name", onchange: e => onChange("title", e.target.value)}),
-      h("div", {k:"flex gap-2"}, [
-        h("input", {k: "input flex-1", placeholder: "Attribute"}),
-        h("input", {k: "input flex-1", placeholder: "Value"}),
+    id && !searchFocused ? h("div", {k: "flex", style:"flex-direction:column;"}, [
+      h("input", {
+        k: "input border-b",
+        style: "font-size:22px;",
+        placeholder: "name",
+        value: title,
+        oninput: e => setTitle(e.target.value),
+        onchange: e => onChange("title", e.target.value),
+      }),
+      ...attributes.map((a, i) => {
+        return h("div", {k:"flex border-b", key: a}, [
+          h("input", {
+            k: "input flex-1 border-r",
+            placeholder: "attribute",
+            value: a,
+            //oninput: e => setNewAttribute(e.target.value),
+            onchange: e => onUpdateAttribute(a, e.target.value, entity[a]),
+          }),
+          h("input", {
+            k: "input flex-1",
+            placeholder: "value",
+            value: entity[a],
+            //oninput: e => setNewValue(e.target.value),
+            onchange: e => onUpdateAttribute(a, a, e.target.value),
+          }),
+        ]);
+      }),
+      h("div", {k:"flex border-b"}, [
+        h("input", {
+          k: "input flex-1 border-r",
+          placeholder: "new attribute",
+          value: newAttribute,
+          oninput: e => setNewAttribute(e.target.value),
+          onchange: onNewAttribute,
+        }),
+        h("input", {
+          k: "input flex-1",
+          placeholder: "new value",
+          value: newValue,
+          oninput: e => setNewValue(e.target.value),
+        }),
       ]),
-      h("textarea", {k: "input", style: "min-height:400px;resize:vertical;", placeholder: "Content"}),
-    ]) : h("div", {}, results.map(e => h("div", {onclick: () => setId(e.id)}, [
-      h("div", {style:"font-size:18px;font-weight:bold;cursor:pointer;"}, e.title),
+      h("textarea", {
+        k: "input border-b",
+        style: "min-height:400px;resize:vertical;",
+        placeholder: "content",
+        value: content,
+        oninput: e => setContent(e.target.value),
+        onchange: e => onChange("content", e.target.value),
+      }),
+      entity ? h("div", { k: "flex border-b", style: "padding:4px 8px;font-size:14px;" }, [
+        h("div", {}, formatDatetime(idTimestamp(entity.id))),
+        h("div", {k: "flex-1"}),
+        h("div", {}, formatDatetime(idTimestamp(entity.rev))),
+      ]) : null,
+    ]) : h("div", {}, results.map(e => h("div", {
+      k: "result p-2 border-b",
+      onmousedown: () => setId(e.id),
+    }, [
+      h("div", {k: "mb-2", style:"font-size:18px;font-weight:bold;cursor:pointer;"}, e.title),
       h("div", {k: "truncate"}, e.content || "-"),
     ])))
   ]);
 }
+
+document.addEventListener("keydown", e => {
+  if (e.ctrlKey && e.keyCode == 76) {
+    document.getElementById("search").focus();
+    document.getElementById("search").select();
+  }
+});
 </script>
