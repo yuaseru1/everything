@@ -4,8 +4,8 @@
 <meta http-equiv="X-UA-Compatible" content="IE=edge" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="manifest" href="/app.webmanifest" />
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎯</text></svg>">
 <link rel="icon" type="image/png" href="/icon.png" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎯</text></svg>">
 <link rel="apple-touch-icon" href="/icon.png" />
 <style>
 :root { --font: sans-serif; --primary: #EC4899; --gray: #9CA3AF; --foreground: #222222; --background: white; --surface: #f9f9f9; --border: #eeeeee; }
@@ -36,6 +36,7 @@ h1 { font-size: 28px; }
 .border-r, .border-b { border: 0 solid var(--border); }
 .border-r { border-right-width: 1px; }
 .border-b { border-bottom-width: 1px; }
+.icon { width: 20px; height: 20px; vertical-align:middle; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .result:hover { cursor: pointer; background: var(--surface); }
 @media only screen and (max-width: 768px) {
   .hidden-phone { display: none; }
@@ -633,7 +634,7 @@ function App() {
       ]),
       h("textarea", {
         k: "input border-b",
-        style: "min-height:500px;resize:vertical;",
+        style: "min-height:calc(100vh - "+(((attributes.length+1)*37)+129)+"px);resize:none;",
         placeholder: "content",
         value: content,
         oninput: e => setContent(e.target.value),
@@ -707,7 +708,7 @@ function App() {
 
   return h("div", {k: "container"}, [
     h("div", {k: "flex border-b"}, [
-      h("button", {k: "button", onclick: onHome}, "🪴"),
+      h("button", {k: "button", onclick: onHome, innerHTML: `<svg viewBox="0 0 24 24" class="icon"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>`}),
       h("input", {
         id: "search",
         k: "input flex-1",
@@ -718,7 +719,7 @@ function App() {
         onfocus: () => setSearchFocused(true),
         onblur: () => setSearchFocused(false)
       }),
-      h("button", {k: "button", onclick: onNew}, "🪷"),
+      h("button", {k: "button", onclick: onNew, innerHTML: `<svg viewBox="0 0 24 24" class="icon"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>`}),
     ]),
     id && !searchFocused ? renderEntity() : renderSearch()
   ]);
