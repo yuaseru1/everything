@@ -20,6 +20,9 @@ import (
 //go:embed index.html
 var assetIndex []byte
 
+//go:embed sw.js
+var assetSwjs []byte
+
 func main() {
 	port := or(os.Getenv("PORT"), "8888")
 	log.Println("starting on port", port)
@@ -54,7 +57,12 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/app.webmanifest" {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"name":"Everything","background_color":"white"}`))
+		w.Write([]byte(`{"name":"Everything","background_color":"white","display":"standalone","start_url":"/"}`))
+		return
+	}
+	if r.URL.Path == "/sw.js" {
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Write(assetSwjs)
 		return
 	}
 	log.Println("served index")

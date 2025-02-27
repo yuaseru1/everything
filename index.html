@@ -45,7 +45,11 @@ h1 { font-size: 28px; }
 }
 </style>
 <div id="root" style="min-height:100vh">
-  <div id="loading" style="padding:20vh 0;text-align:center">Loading...</div>
+  <form id="loading" style="padding:20vh 0;text-align:center" onsubmit="javascript:onSetup(event)">
+    <input class="input mb-2" id="usernameField" placeholder="username" /><br />
+    <input class="input mb-2" id="passwordField" placeholder="password" type="password" autoFocus /><br/>
+    <button class="button" type="submit" style="width:200px;">unlock</button>
+  </div>
 </div>
 <script>
 function newId() {
@@ -239,92 +243,6 @@ function dbIndex(d) {
     redraw();
   }, 500);
 }
-
-(async () => {
-  if (window.location.hash === "#signout") {
-    localStorage.checkpoint = "";
-    localStorage.username = "";
-    localStorage.masterKeyEncrypted = "";
-    await dbClear();
-    window.location.hash = "";
-    window.location.reload();
-    return;
-  }
-
-  try {
-    let username = localStorage.username;
-    if (!username) username = prompt("Username");
-    if (!username) return loading.innerText = "Missing username";
-    let password;
-    if (!password) password = prompt("Password");
-    if (!password) return loading.innerText = "Missing password";
-    const usernameHash = await cryptoHash(username);
-    const apiSalt = await cryptoHash("api" + usernameHash);
-    const passwordSalt = await cryptoHash("password" + usernameHash);
-    const apiKey = await cryptoKeyFromPassword(password, apiSalt);
-    const passwordKey = await cryptoKeyFromPassword(password, passwordSalt);
-    let masterKey = passwordKey;
-    /*
-    if (localStorage.masterKeyEncrypted) {
-      masterKey = await cryptoDecrypt(passwordKey, localStorage.masterKeyEncrypted);
-    } else {
-      localStorage.username = username;
-      masterKey = await cryptoRandom(32);
-      localStorage.masterKeyEncrypted = await cryptoEncrypt(passwordKey, masterKey);
-    }
-    */
-    localStorage.username = username;
-    state.apiKey = apiKey;
-    state.username = username;
-    state.masterKey = masterKey;
-    const datums = await dbTransact("datums", "readonly", (store) => dbWrap(store.getAll()));
-    datums.sort((a, b) => a[1] > b[1]);
-    for (let d of datums) {
-      d[3] = JSON.parse(await cryptoDecrypt(masterKey, d[3]));
-      dbIndex(d);
-      console.log("loaded", d);
-    }
-
-    // start sync
-    const sync = async () => {
-      try {
-        const checkpoint = parseInt(localStorage.checkpoint ||'0');
-        const setDatums = state.datums.filter(d => !d[4]).map(d => d.slice(0, 4));
-        console.log("TO SET", setDatums);
-        for (let d of setDatums) {
-          d[3] = await cryptoEncrypt(state.masterKey, JSON.stringify(d[3]));
-        }
-        const newDatums = await rpc(state.apiKey, checkpoint, setDatums);
-        const newDatumsStore = [];
-        for (let d of newDatums) {
-          try {
-            // try decrypting to check if valid / from us
-            const value = JSON.parse(await cryptoDecrypt(state.masterKey, d[3]));
-            newDatumsStore.push([...d, true]);
-            dbIndex([d[0], d[1], d[2], value, true]);
-          } catch (e) {
-            console.log("sync garbage", d, e);
-          }
-        }
-        await dbTransact("datums", "readwrite", (store) => {
-          newDatumsStore.forEach(d => store.put(d, d[1] + d[0] + d[2]));
-        });
-        localStorage.checkpoint = checkpoint + newDatums.length;
-        console.log("synced", "checkpoint", checkpoint, "sets", setDatums.length, "gets", newDatums.length);
-      } catch(e) {
-        console.error("Sync error", e);
-      }
-    }
-    sync();
-    setInterval(sync, 15000);
-
-    redraw();
-  } catch (e) {
-    console.error("Error", e);
-    loading.innerText = "Error decrypting";
-    loading.classList.add("error");
-  }
-})();
 
 let hooks;
 let index = 0;
@@ -602,10 +520,107 @@ function App() {
   ]);
 }
 
-document.addEventListener("keydown", e => {
-  if (e.ctrlKey && e.keyCode == 76) {
-    document.getElementById("search").focus();
-    document.getElementById("search").select();
+async function onSetup(e) {
+  try {
+    if (e) e.preventDefault();
+    let username = localStorage.username;
+    if (!username) username = usernameField.value;
+    if (!username) return loading.innerText = "Missing username";
+    let password;
+    if (!password) password = passwordField.value;
+    if (!password) return loading.innerText = "Missing password";
+    const usernameHash = await cryptoHash(username);
+    const apiSalt = await cryptoHash("api" + usernameHash);
+    const passwordSalt = await cryptoHash("password" + usernameHash);
+    const apiKey = await cryptoKeyFromPassword(password, apiSalt);
+    const passwordKey = await cryptoKeyFromPassword(password, passwordSalt);
+    let masterKey = passwordKey;
+    /*
+    if (localStorage.masterKeyEncrypted) {
+      masterKey = await cryptoDecrypt(passwordKey, localStorage.masterKeyEncrypted);
+    } else {
+      localStorage.username = username;
+      masterKey = await cryptoRandom(32);
+      localStorage.masterKeyEncrypted = await cryptoEncrypt(passwordKey, masterKey);
+    }
+    */
+    localStorage.username = username;
+    state.apiKey = apiKey;
+    state.username = username;
+    state.masterKey = masterKey;
+    const datums = await dbTransact("datums", "readonly", (store) => dbWrap(store.getAll()));
+    datums.sort((a, b) => a[1] > b[1]);
+    for (let d of datums) {
+      d[3] = JSON.parse(await cryptoDecrypt(masterKey, d[3]));
+      dbIndex(d);
+      console.log("loaded", d);
+    }
+
+    // start sync
+    const sync = async () => {
+      try {
+        const checkpoint = parseInt(localStorage.checkpoint ||'0');
+        const setDatums = state.datums.filter(d => !d[4]).map(d => d.slice(0, 4));
+        console.log("TO SET", setDatums);
+        for (let d of setDatums) {
+          d[3] = await cryptoEncrypt(state.masterKey, JSON.stringify(d[3]));
+        }
+        const newDatums = await rpc(state.apiKey, checkpoint, setDatums);
+        const newDatumsStore = [];
+        for (let d of newDatums) {
+          try {
+            // try decrypting to check if valid / from us
+            const value = JSON.parse(await cryptoDecrypt(state.masterKey, d[3]));
+            newDatumsStore.push([...d, true]);
+            dbIndex([d[0], d[1], d[2], value, true]);
+          } catch (e) {
+            console.log("sync garbage", d, e);
+          }
+        }
+        await dbTransact("datums", "readwrite", (store) => {
+          newDatumsStore.forEach(d => store.put(d, d[1] + d[0] + d[2]));
+        });
+        localStorage.checkpoint = checkpoint + newDatums.length;
+        console.log("synced", "checkpoint", checkpoint, "sets", setDatums.length, "gets", newDatums.length);
+      } catch(e) {
+        console.error("Sync error", e);
+      }
+    }
+    sync();
+    setInterval(sync, 15000);
+
+    redraw();
+  } catch (e) {
+    console.error("Error", e);
+    loading.innerText = "Error decrypting";
+    loading.classList.add("error");
   }
-});
+}
+
+(async () => {
+  document.addEventListener("keydown", e => {
+    if (e.ctrlKey && e.keyCode == 76) {
+      document.getElementById("search").focus();
+      document.getElementById("search").select();
+    }
+  });
+
+  if ("serviceWorker" in navigator && window.location.hostname !== "localhost") {
+    navigator.serviceWorker.register("/sw.js", { scope: "/" });
+  }
+
+  if (localStorage.username) {
+    usernameField.style.display = 'none';
+  }
+
+  if (window.location.hash === "#signout") {
+    localStorage.checkpoint = "";
+    localStorage.username = "";
+    localStorage.masterKeyEncrypted = "";
+    await dbClear();
+    window.location.hash = "";
+    window.location.reload();
+    return;
+  }
+})();
 </script>
