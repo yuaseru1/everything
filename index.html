@@ -273,6 +273,7 @@ function dbIndex(d) {
       localStorage.masterKeyEncrypted = await cryptoEncrypt(passwordKey, masterKey);
     }
     */
+    localStorage.username = username;
     state.apiKey = apiKey;
     state.username = username;
     state.masterKey = masterKey;
