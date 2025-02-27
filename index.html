@@ -422,25 +422,27 @@ function redraw() {
   }
 }
 
+const RESERVED = ["id", "rev", "title", "content", "deleted"];
+
 function App() {
-  const hash = decodeURIComponent(window.location.hash.slice(1));
-  let initialId = null;
-  let initialSearch = "";
-  if (hash.length == 16 && hash.startsWith("001")) {
-    initialId = hash;
-  } else if (hash.length > 0) {
-    initialSearch = hash;
+  function parseHash() {
+    const hash = decodeURIComponent(window.location.hash.slice(1));
+    let [id, ...search] = hash.split(":");
+    if (!id || id.length != 16) id = "";
+    return [id, search.join(":")];
   }
+  const [initialId, initialSearch] = parseHash();
   const [id, setId] = useState(initialId);
   const [search, setSearch] = useState(initialSearch);
   const [searchFocused, setSearchFocused] = useState(false);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [attributeInputs, setAttributeInputs] = useState({});
   const [newAttribute, setNewAttribute] = useState("");
   const [newValue, setNewValue] = useState("");
   const entity = id ? state.entities[id] : null;
 
-  let results = Object.values(state.entities);
+  let results = Object.values(state.entities).filter(e => !e.deleted);
   const searchKeywords = [];
   const searchFields = [{name: "title", kind: "text"}];
   for (let s of search.split(" ")) {
@@ -464,33 +466,63 @@ function App() {
 
   let attributes = [];
   if (entity) {
-    const exl = ["id", "rev", "title", "content"];
     attributes = Object.keys(entity);
     attributes = attributes.filter(k => entity[k] != null);
-    attributes = attributes.filter(k => !exl.includes(k));
+    attributes = attributes.filter(k => !RESERVED.includes(k));
     attributes.sort();
   }
 
   useEffect(() => {
+    document.addEventListener("hashchange", () => {
+      const [newId, newSearch] = parseHash();
+      if (id != newId) setId(newId);
+      if (search != newSearch) setSearch(newSearch);
+    });
     if (id) return;
     document.getElementById("search").focus();
   }, []);
 
   useEffect(() => {
+    if (window.hashChangeDebounce) clearTimeout(window.hashChangeDebounce);
+    window.hashChangeDebounce = setTimeout(() => {
+        window.location.hash = id + (search ? ":"+search : "");
+    }, 500);
+  }, [id, search]);
+
+  useEffect(() => {
     if (!id) return;
-    window.location.hash = id;
     if (!entity) {
       setTitle("");
       setContent("");
+      setAttributeInputs({});
       return;
     }
-    setTitle(entity.title||"");
-    setContent(entity.content||"");
+    setTitle(entity.title || "");
+    setContent(entity.content || "");
+    setAttributeInputs(Object.keys(entity).reduce((t, a) => {
+      if (RESERVED.includes(a)) return t;
+      t["a"+a] = a;
+      t["v"+a] = entity[a];
+      return t;
+    }, {}));
   }, [id]);
 
   function onSearch(search) {
     setSearch(search);
-    window.location.hash = search;
+  }
+
+  async function onSearchKeyDown(e) {
+    if (e.keyCode == 13) {
+      document.getElementById("search").blur();
+      if (results.length > 0) {
+        setId(results[0].id);
+      } else {
+        const id = newId();
+        await dbChange(id, {title: search});
+        setId(id);
+        document.querySelector("textarea[placeholder='content']").focus();
+      }
+    }
   }
 
   function onNew() {
@@ -503,28 +535,56 @@ function App() {
 
   async function onNewAttribute() {
     if (!newAttribute) return;
+    if (RESERVED.includes(newAttribute)) return;
     await dbChange(id, {[newAttribute]: newValue});
+    setAttributeInputs({
+      ...attributeInputs,
+      ["a"+newAttribute]: newAttribute,
+      ["v"+newAttribute]: newValue,
+    });
     setNewAttribute("");
     setNewValue("");
   }
 
-  async function onUpdateAttribute(oldAttribute, newAttribute, value) {
-    const changes = {[newAttribute]: value};
-    if (oldAttribute != newAttribute) {
-      changes[oldAttribute] = null;
-    }
+  async function onUpdateAttribute(oldAttribute, newAttribute) {
+    if (RESERVED.includes(newAttribute)) return;
     if (newAttribute == "") {
-      delete changes[newAttribute];
+      setAttributeInputs({
+        ...attributeInputs,
+        ["a"+oldAttribute]: "",
+        ["v"+oldAttribute]: "",
+      });
+      dbChange(id, {[oldAttribute]: null});
+      return;
     }
-    await dbChange(id, changes);
+    if (oldAttribute != newAttribute) {
+      setAttributeInputs({
+          ...attributeInputs,
+          ["a"+oldAttribute]: "",
+          ["v"+oldAttribute]: "",
+          ["a"+newAttribute]: newAttribute,
+          ["v"+newAttribute]: entity[oldAttribute],
+      });
+      await dbChange(id, {
+        [oldAttribute]: null,
+        [newAttribute]: entity[oldAttribute],
+      });
+      return;
+    }
   }
 
-  return h("div", {k: "container"}, [
-    h("div", {k: "flex border-b"}, [
-    h("input", {id: "search", k: "input flex-1", placeholder: "search...", value: search, oninput: e => onSearch(e.target.value), onfocus: () => setSearchFocused(true), onblur: () => setSearchFocused(false)}),
-      h("button", {k: "button", onclick: onNew}, "new"),
-    ]),
-    id && !searchFocused ? h("div", {k: "flex", style:"flex-direction:column;"}, [
+  async function onUpdateValue(attribute, value) {
+    await dbChange(id, {[attribute]: value});
+  }
+
+  function onDelete() {
+    if (!confirm("are you sure?")) return;
+    dbChange(id, {deleted: Date.now()});
+    setId("");
+  }
+
+  function renderEntity() {
+    return h("div", {k: "flex", style:"flex-direction:column;"}, [
       h("input", {
         k: "input border-b",
         style: "font-size:22px;",
@@ -538,16 +598,16 @@ function App() {
           h("input", {
             k: "input flex-1 border-r",
             placeholder: "attribute",
-            value: a,
-            //oninput: e => setNewAttribute(e.target.value),
-            onchange: e => onUpdateAttribute(a, e.target.value, entity[a]),
+            value: attributeInputs["a"+a]||"",
+            oninput: e => setAttributeInputs({...attributeInputs, ["a"+a]: e.target.value}),
+            onchange: e => onUpdateAttribute(a, e.target.value),
           }),
           h("input", {
             k: "input flex-1",
             placeholder: "value",
-            value: entity[a],
-            //oninput: e => setNewValue(e.target.value),
-            onchange: e => onUpdateAttribute(a, a, e.target.value),
+            value: attributeInputs["v"+a]||"",
+            oninput: e => setAttributeInputs({...attributeInputs, ["v"+a]: e.target.value}),
+            onchange: e => onUpdateValue(a, e.target.value),
           }),
         ]);
       }),
@@ -577,9 +637,40 @@ function App() {
       entity ? h("div", { k: "flex border-b", style: "padding:4px 8px;font-size:14px;" }, [
         h("div", {}, formatDatetime(idTimestamp(entity.id))),
         h("div", {k: "flex-1"}),
+        h("a", {style: "color:var(--foreground)", onclick: onDelete}, "delete"),
+        h("div", {k: "flex-1"}),
         h("div", {}, formatDatetime(idTimestamp(entity.rev))),
       ]) : null,
-    ]) : h("div", {}, results.map(e => h("div", {
+      h("div", { k: "flex border-b", style: "padding:4px 8px;font-size:14px;" }, [
+        h("div", {}, localStorage.checkpoint || "0"),
+        h("div", {k: "flex-1"}),
+        h("div", {}, localStorage.username || ""),
+      ])
+    ])
+  }
+
+  function renderSearch() {
+    let favoritesEls = [];
+    if (!search) {
+      const favoritesEntity = results.find(e => e.title.toLowerCase() == "favorites");
+      if (favoritesEntity) {
+        const favorites = (favoritesEntity.content || "").split("\n");
+        favoritesEls = favorites.map(f => {
+          const [name, ...value] = f.split(":");
+          const onClick = () => {
+            if (value[0].length == 16 && value[0].startsWith("001")) {
+              setId(value[0]);
+            } else {
+              setId("");
+              setSearch(value.join(":"));
+            }
+          };
+          return h("div", {k: "result p-2 border-b", onmousedown: onClick}, name.trim());
+        });
+      }
+    }
+
+    return h("div", {}, favoritesEls.concat(results.map(e => h("div", {
       k: "result p-2 border-b",
       key: e.id,
       style: "display: grid;gap:4px;grid-template-columns: repeat("+searchFields.length+", 1fr);",
@@ -600,7 +691,24 @@ function App() {
           : f.kind == "otp"
             ? h(Otp, {secret: e[f.name]})
             : (e[f.name] || "-")
-    )))))
+    ))))))
+  }
+
+  return h("div", {k: "container"}, [
+    h("div", {k: "flex border-b"}, [
+      h("input", {
+        id: "search",
+        k: "input flex-1",
+        placeholder: "search...",
+        value: search,
+        oninput: e => onSearch(e.target.value),
+        onkeydown: onSearchKeyDown,
+        onfocus: () => setSearchFocused(true),
+        onblur: () => setSearchFocused(false)
+      }),
+      h("button", {k: "button", onclick: onNew}, "new"),
+    ]),
+    id && !searchFocused ? renderEntity() : renderSearch()
   ]);
 }
 
