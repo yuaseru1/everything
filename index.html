@@ -529,6 +529,11 @@ function App() {
     setId(newId());
   }
 
+  function onHome() {
+    setId("");
+    setSearch("");
+  }
+
   function onChange(attribute, value) {
     dbChange(id, {[attribute]: value});
   }
@@ -700,6 +705,7 @@ function App() {
 
   return h("div", {k: "container"}, [
     h("div", {k: "flex border-b"}, [
+      h("button", {k: "button", onclick: onHome}, "🪴"),
       h("input", {
         id: "search",
         k: "input flex-1",
@@ -710,7 +716,7 @@ function App() {
         onfocus: () => setSearchFocused(true),
         onblur: () => setSearchFocused(false)
       }),
-      h("button", {k: "button", onclick: onNew}, "new"),
+      h("button", {k: "button", onclick: onNew}, "🪷"),
     ]),
     id && !searchFocused ? renderEntity() : renderSearch()
   ]);
