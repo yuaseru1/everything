@@ -637,6 +637,7 @@ function App() {
         style: "min-height:calc(100vh - "+(((attributes.length+1)*37)+129)+"px);resize:none;",
         placeholder: "content",
         value: content,
+        spellcheck: 'false',
         oninput: e => setContent(e.target.value),
         onchange: e => onChange("content", e.target.value),
       }),
