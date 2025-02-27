@@ -830,7 +830,7 @@ async function onSetup(e) {
 (async () => {
   document.addEventListener("keydown", e => {
     const pressedMac = e.ctrlKey && e.keyCode == 76;
-    const pressedMac = e.metaKey && e.keyCode == 76;
+    const pressedLinux = e.metaKey && e.keyCode == 76;
     if (pressedMac || pressedLinux) {
       document.getElementById("search").focus();
       document.getElementById("search").select();
