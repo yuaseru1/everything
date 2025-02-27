@@ -732,6 +732,7 @@ function Password({ secret }) {
     setValue(secret);
     navigator.clipboard.writeText(secret);
   }
+  if (!secret) return h("span", {}, "-");
   return h("a", {onmousedown: onCopy}, value);
 }
 
@@ -744,6 +745,7 @@ function Otp({ secret }) {
     setOtp(v);
     navigator.clipboard.writeText(v);
   }
+  if (!secret) return h("span", {}, "-");
   return h("a", {onmousedown: onGenerate}, otp);
 }
 
