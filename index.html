@@ -650,12 +650,12 @@ function App() {
   }
 
   function renderSearch() {
-    let favoritesEls = [];
+    let favouritesEls = [];
     if (!search) {
-      const favoritesEntity = results.find(e => e.title.toLowerCase() == "favorites");
-      if (favoritesEntity) {
-        const favorites = (favoritesEntity.content || "").split("\n");
-        favoritesEls = favorites.map(f => {
+      const favouritesEntity = results.find(e => e.title.toLowerCase() == "favourites");
+      if (favouritesEntity) {
+        const favourites = (favouritesEntity.content || "").split("\n");
+        favouritesEls = favourites.map(f => {
           const [name, ...value] = f.split(":");
           const onClick = () => {
             if (value[0].length == 16 && value[0].startsWith("001")) {
@@ -670,7 +670,7 @@ function App() {
       }
     }
 
-    return h("div", {}, favoritesEls.concat(results.map(e => h("div", {
+    return h("div", {}, favouritesEls.concat(results.map(e => h("div", {
       k: "result p-2 border-b",
       key: e.id,
       style: "display: grid;gap:4px;grid-template-columns: repeat("+searchFields.length+", 1fr);",
