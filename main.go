@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -22,6 +23,8 @@ var assetIndex []byte
 
 //go:embed sw.js
 var assetSwjs []byte
+
+var lock sync.Mutex
 
 func main() {
 	port := or(os.Getenv("PORT"), "8888")
@@ -47,6 +50,8 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		r.Body.Close()
 		checkpoint, err := strconv.Atoi(r.URL.Query().Get("checkpoint"))
 		check(err)
+		lock.Lock()
+		defer lock.Unlock()
 		data := string(awsGet(user)) + string(body)
 		awsPut(user, []byte(data))
 		datums := strings.Split(data, "\n")

@@ -49,7 +49,7 @@ h1 { font-size: 28px; }
   <form id="loading" style="padding:20vh 0;text-align:center" onsubmit="javascript:onSetup(event)">
     <input class="input mb-2" id="usernameField" placeholder="username" /><br />
     <input class="input mb-2" id="passwordField" placeholder="password" type="password" autoFocus /><br/>
-    <button class="button" type="submit" style="width:200px;">unlock</button>
+    <button class="button" type="submit" style="width:226px;">unlock</button>
   </div>
 </div>
 <script>
@@ -403,7 +403,13 @@ function render(vlist, dom, ns) {
     }
   });
   Object.values(dom.h).map((componentHooks) =>
-    componentHooks.map((h) => h.cb && ((h.cleanup = h.cb()), (h.cb = 0)))
+    componentHooks.map((h) => {
+      if (h.cb) {
+        h.cleanup && h.cleanup();
+        h.cleanup = h.cb();
+        h.cb = 0;
+      }
+    })
   );
   Object.keys(hs)
     .filter((k) => !dom.h[k])
@@ -420,6 +426,36 @@ function redraw() {
     console.error("Error", e);
     loading.innerText = e.message;
     loading.classList.add("error");
+  }
+}
+
+async function callAI(apiKey, selectedText) {
+  try {
+    const response = await fetch("https://proxy.4ki.me/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-proxy-host": "https://api.anthropic.com",
+        "content-type": "application/json",
+        "anthropic-version": "2023-06-01",
+        "x-api-key": apiKey,
+      },
+      body: JSON.stringify({
+        model: "claude-3-5-haiku-latest",
+        max_tokens: 1024,
+        messages: [{
+          role: "user",
+          content: selectedText,
+        }],
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`ai request failed: ${response.status}`);
+    }
+    const data = await response.json();
+    return data.content[0].text.trim();
+  } catch (error) {
+    console.error("ai error", error);
+    return "Error: " + String(error.message);
   }
 }
 
@@ -441,6 +477,8 @@ function App() {
   const [attributeInputs, setAttributeInputs] = useState({});
   const [newAttribute, setNewAttribute] = useState("");
   const [newValue, setNewValue] = useState("");
+  const [selection, setSelection] = useState({ start: 0, end: 0 });
+  const [isGenerating, setIsGenerating] = useState(false);
   const entity = id ? state.entities[id] : null;
 
   let results = Object.values(state.entities).filter(e => !e.deleted);
@@ -463,7 +501,7 @@ function App() {
   }
   results = results.filter(e => searchKeywords.every(k => ((e.title||"")+(e.content||"")).toLowerCase().includes(k.toLowerCase())));
   
-  results.sort((a, b) => a.rev < b.rev);
+  results.sort((a, b) => a.rev > b.rev ? -1 : 1);
 
   let attributes = [];
   if (entity) {
@@ -489,6 +527,19 @@ function App() {
         window.location.hash = id + (search ? ":"+search : "");
     }, 500);
   }, [id, search]);
+
+  useEffect(() => {
+    const h = (event) => {
+      if (event.ctrlKey && event.key === 'k') {
+        event.preventDefault();
+        onAI();
+      }
+    };
+    document.addEventListener("keydown", h);
+    return () => {
+      document.removeEventListener("keydown", h)
+    };
+  }, [selection, isGenerating]);
 
   useEffect(() => {
     if (!id) return;
@@ -589,6 +640,23 @@ function App() {
     setId("");
   }
 
+  async function onAI() {
+    if (selection.start === selection.end || isGenerating) return;
+    setIsGenerating(true);
+    const aiApiKey = (results.find(e => e.title.toLowerCase() == "ai api key")?.content || "").trim();
+    const selectedText = content.substring(selection.start, selection.end);
+    const response = await callAI(aiApiKey, selectedText);
+    const newContent = (
+      content.substring(0, selection.end) +
+      "\n\n" + response + "\n" +
+      content.substring(selection.end)
+    );
+    setContent(newContent);
+    await onChange("content", newContent);
+    setIsGenerating(false);
+    setSelection({ start: 0, end: 0 });
+  }
+
   function renderEntity() {
     return h("div", {k: "flex", style:"flex-direction:column;"}, [
       h("input", {
@@ -640,8 +708,20 @@ function App() {
         spellcheck: 'false',
         oninput: e => setContent(e.target.value),
         onchange: e => onChange("content", e.target.value),
+        onselect: e => {
+          setSelection({
+            start: e.target.selectionStart,
+            end: e.target.selectionEnd
+          });
+        },
       }),
       entity ? h("div", { k: "flex border-b", style: "padding:4px 8px;font-size:14px;" }, [
+        h("a", {
+          k: "mr-2",
+          onclick: onAI,
+          disabled: selection.start === selection.end || isGenerating,
+          style: isGenerating ? "opacity:0.5;" : "",
+        }, isGenerating ? "AI..." : "AI"),
         h("div", {}, formatDatetime(idTimestamp(entity.id))),
         h("div", {k: "flex-1"}),
         h("a", {style: "color:var(--foreground)", onclick: onDelete}, "delete"),
