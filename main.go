@@ -88,7 +88,12 @@ func check(err error) {
 	}
 }
 
+var cache = map[string][]byte{}
+
 func awsGet(key string) []byte {
+	if v, ok := cache[key]; ok || os.Getenv("AWS_ACCESS_KEY") == "" {
+		return v
+	}
 	target := fmt.Sprintf("https://%s.s3.amazonaws.com/%s",
 		os.Getenv("AWS_BUCKET"), key)
 	bs, err := aws("GET", target, nil, nil)
@@ -99,6 +104,10 @@ func awsGet(key string) []byte {
 	return bs
 }
 func awsPut(key string, value []byte) {
+	cache[key] = value
+	if os.Getenv("AWS_ACCESS_KEY") == "" {
+		return
+	}
 	_, err := aws(
 		"PUT",
 		fmt.Sprintf("https://%s.s3.amazonaws.com/%s",

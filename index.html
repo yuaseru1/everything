@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<title>Everything</title>
+<title>everything</title>
 <meta charset="utf-8" />
 <meta http-equiv="X-UA-Compatible" content="IE=edge" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -42,7 +42,7 @@ h1 { font-size: 28px; }
   .hidden-phone { display: none; }
 }
 @media (prefers-color-scheme: dark) {
-  :root { --foreground: white; --background: #222222; --surface: #444444; --border: #444444; }
+  :root { --foreground: white; --background: #111111; --surface: #333333; --border: #444444; }
 }
 </style>
 <div id="root" style="min-height:100vh">
@@ -459,6 +459,22 @@ async function callAI(apiKey, selectedText) {
   }
 }
 
+let currencyRates = {};
+let fetchingCurrencyRates = false;
+
+function currencyRate(n, a, b) {
+  if (Object.keys(currencyRates).length == 0 &&!fetchingCurrencyRates) {
+    fetchingCurrencyRates = true;
+    (async () => {
+      const res = await fetch("https://open.er-api.com/v6/latest/USD");
+      if (!res.ok) return;
+      currencyRates = (await res.json()).rates;
+      redraw();
+    })();
+  }
+  return n / (currencyRates[a] || 1) * (currencyRates[b] || 0);
+}
+
 const RESERVED = ["id", "rev", "title", "content", "deleted"];
 
 function App() {
@@ -501,7 +517,17 @@ function App() {
   }
   results = results.filter(e => searchKeywords.every(k => ((e.title||"")+(e.content||"")).toLowerCase().includes(k.toLowerCase())));
   
-  results.sort((a, b) => a.rev > b.rev ? -1 : 1);
+  results.sort((a, b) => {
+    if (search) {
+      const ai = a.title.toLowerCase().indexOf(search.toLowerCase());
+      const bi = b.title.toLowerCase().indexOf(search.toLowerCase());
+      if (ai >= 0 && bi < 0) return -1;
+      if (bi >= 0 && ai < 0) return 1;
+      if (ai == bi) return a.title.toLowerCase() > b.title.toLowerCase() ? 1 : -1;
+      return ai - bi;
+    }
+    return a.rev > b.rev ? -1 : 1;
+  });
 
   let attributes = [];
   if (entity) {
@@ -738,6 +764,47 @@ function App() {
 
   function renderSearch() {
     let favouritesEls = [];
+
+    function pushToolValue(v) {
+      favouritesEls.push(
+        h("div", {k: "result p-2 border-b", onmousedown: () => navigator.clipboard.writeText(v)}, h("i", {}, v))
+      );
+    }
+    if (search.endsWith("kg/lbs")) {
+      pushToolValue(parseFloat(search)*2.20462262);
+    } else if (search.endsWith("lbs/kg")) {
+      pushToolValue(parseFloat(search)/2.20462262);
+    } else if (search.endsWith("ft/m")) {
+      pushToolValue(parseFloat(search)*0.3048);
+    } else if (search.endsWith("m/ft")) {
+      pushToolValue(parseFloat(search)/0.3048);
+    } else if (search.endsWith("sqft/sqm")) {
+      pushToolValue(parseFloat(search)*0.0929);
+    } else if (search.endsWith("sqm/sqft")) {
+      pushToolValue(parseFloat(search)/0.0929);
+    } else if (search.endsWith("in/cm")) {
+      pushToolValue(parseFloat(search)*2.54);
+    } else if (search.endsWith("cm/in")) {
+      pushToolValue(parseFloat(search)/2.54);
+    } else if (search.endsWith("m/km")) {
+      pushToolValue(parseFloat(search)*1.609344);
+    } else if (search.endsWith("km/m")) {
+      pushToolValue(parseFloat(search)/1.609344);
+    } else if (search.match(/^[0-9\.]+[a-z]{3}\/[a-z]{3}$/i)) {
+      const n = parseFloat(search);
+      const a = search.slice(-7, -4).toUpperCase();
+      const b = search.slice(-3).toUpperCase();
+      pushToolValue(currencyRate(n, a, b).toString());
+    } if (search.match(/^=[0-9\.*\/+-^]+$/)) {
+      let v = "?";
+      try {
+        v = eval(search.slice(1)).toString();
+      } catch (e) {
+        v = "err: " + e.message.slice(0, 24);
+      }
+      pushToolValue(v);
+    }
+
     if (!search) {
       const favouritesEntity = results.find(e => e.title.toLowerCase() == "favourites");
       if (favouritesEntity) {
