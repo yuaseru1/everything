@@ -1,4 +1,4 @@
-const name = "everything-v12";
+const name = "everything-v13";
 const files = ["/"];
 self.addEventListener("install", (e) => {
   self.skipWaiting();

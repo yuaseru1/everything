@@ -790,7 +790,7 @@ function App() {
       pushToolValue(parseFloat(search)*1.609344);
     } else if (search.endsWith("km/m")) {
       pushToolValue(parseFloat(search)/1.609344);
-    } else if (search.match(/^[0-9\.]+[a-z]{3}\/[a-z]{3}$/i)) {
+    } else if (search.match(/^[0-9\.]+\s*[a-z]{3}\/[a-z]{3}$/i)) {
       const n = parseFloat(search);
       const a = search.slice(-7, -4).toUpperCase();
       const b = search.slice(-3).toUpperCase();
@@ -939,7 +939,6 @@ async function onSetup(e) {
       try {
         const checkpoint = parseInt(localStorage.checkpoint ||'0');
         const setDatums = state.datums.filter(d => !d[4]).map(d => d.slice(0, 4));
-        console.log("TO SET", setDatums);
         for (let d of setDatums) {
           d[3] = await cryptoEncrypt(state.masterKey, JSON.stringify(d[3]));
         }
