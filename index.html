@@ -8,16 +8,19 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎯</text></svg>">
 <link rel="apple-touch-icon" href="/icon.png" />
 <style>
-:root { --font: sans-serif; --primary: #EC4899; --gray: #9CA3AF; --foreground: #222222; --background: white; --surface: #f9f9f9; --border: #eeeeee; }
+@font-face { font-family: "Go Mono"; src: local("Go Mono"), url("Go-Mono.ttf"); }
+@font-face { font-family: "Go Mono"; src: local("Go Mono"), url("Go-Mono-Bold.ttf"); font-weight: bold; }
+:root { --font: "Go Mono", monospace; --primary: #EC4899; --gray: #9CA3AF; --foreground: #222222; --background: white; --surface: #f9f9f9; --border: #eeeeee; }
 body { font-family: var(--font); font-size: 16px; margin: 0; color: var(--foreground); background: var(--background); }
 * { box-sizing: border-box; }
 a { color: var(--primary); text-decoration: none; cursor: pointer; }
 a:hover { text-decoration: underline; }
+pre, p { margin: 0; }
 img { max-width: 100%; }
 h1 { font-size: 28px; }
 .label { display: block; margin-bottom: 4px; font-size: 16px; }
 .input { padding: 8px; min-width: 200px; border: none; background: transparent; color: var(--foreground); line-height: 20px; font-size: 16px; font-family: var(--font); outline: 0; border-radius: 0; }
-.button { color: var(--background); background: var(--foreground); padding: 8px 12px; border: 0; font-size: 16px; cursor: pointer; }
+.button { color: var(--background); background: var(--foreground); font-family: var(--font); padding: 8px 12px; border: 0; font-size: 16px; cursor: pointer; }
 .container { max-width: 800px; margin: 0 auto; border: 1px solid var(--border); border-width: 0 1px 0 1px; }
 .error { color: red; }
 .p-2 { padding: 8px; }
@@ -29,6 +32,7 @@ h1 { font-size: 28px; }
 .flex-1 { flex: 1; }
 .gap-2 { gap: 8px; }
 .items-center { align-items: center; }
+.font-bold { font-weight: bold; }
 .text-right { text-align: right; }
 .w-full { width: 100%; }
 .hidden { display: none; }
@@ -38,6 +42,20 @@ h1 { font-size: 28px; }
 .border-b { border-bottom-width: 1px; }
 .icon { width: 20px; height: 20px; vertical-align:middle; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .result:hover { cursor: pointer; background: var(--surface); }
+.markdown { padding: 0 8px; }
+.markdown h1 { font-size: 24px; margin: 16px 0 8px; }
+.markdown h2 { font-size: 22px; margin: 16px 0 8px; }
+.markdown h3 { font-size: 20px; margin: 16px 0 8px; }
+.markdown p, .markdown pre { margin: 16px 0; }
+.markdown hr { margin: 16px 0; border: none; border-bottom: 1px solid var(--border); }
+.markdown ul, .markdown ol { padding-left: 16px; }
+.markdown li { margin: 2px 0; }
+.markdown blockquote { margin: 0; padding: 1px 16px; border-left: 2px solid black; }
+.markdown code { background: var(--surface); }
+.markdown pre { background: var(--surface); padding: 8px; overflow-x: auto; font-size: 14px; }
+.markdown table { width: 100%; border-collapse: collapse; }
+.markdown th { text-align: left; border-bottom: 2px solid var(--border); }
+.markdown th, .markdown td { padding: 4px; border-bottom: 1px solid var(--border); }
 @media only screen and (max-width: 768px) {
   .hidden-phone { display: none; }
 }
@@ -96,6 +114,130 @@ async function rpc(apiKey, checkpoint, datums) {
       throw new Error("Server error " + response.status);
     }
   }
+}
+function copy(v) {
+  navigator.clipboard.writeText(v);
+}
+function downloadFile(name, data) {
+  let url = URL.createObjectURL(new Blob([data]));
+  const a = document.createElement("a");
+  a.style.display = "none";
+  a.href = url;
+  if (name) a.setAttribute("download", name);
+  if (typeof a.download === "undefined") {
+    a.setAttribute("target", "_blank");
+  }
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+function markdown(t, e) {
+  var n = {
+      "|": "mark",
+      "*": "strong",
+      _: "em",
+    },
+    o = /^[\s\S]+?(?=[\\<!\[_*`@\|]|\ {2,}\n|$)/,
+    i = /^!\[([^\]]*)\]\(([^\)]+)\)/,
+    r = /^\[([^\]]*)\]\(([^\)]+)\)/,
+    a = /^([\*_\|])(.+?)\1/,
+    s = /^`([^`]+)`/,
+    h = /^---/;
+
+  function c(t) {
+    var e = document.createElement("a");
+    e.href = t;
+    return (
+      e.protocol +
+      "//" +
+      e.hostname +
+      escape(e.pathname) +
+      encodeURI(e.search) +
+      encodeURI(e.hash)
+    );
+  }
+
+  function u(t, e, n) {
+    "string" == typeof n &&
+      (n = {
+        class: n,
+      });
+    var o = "<" + t;
+    if (n) for (var i in n) n[i] && (o += " " + i + '="' + n[i].trim() + '"');
+    return (o += ">"), !1 !== e && (o += e + "</" + t + ">"), o;
+  }
+
+  function l(t) {
+    for (var e, d = ""; t; ) {
+      if ((e = h.exec(t))) d += u("hr", "");
+      else if ((e = s.exec(t))) d += u("code", e[1]);
+      else if ((e = a.exec(t))) d += u(n[e[1]], l(e[2]));
+      else if ((e = r.exec(t)))
+        d += u("a", l(e[1]), {
+          href: c(e[2].trim()),
+        });
+      else if ((e = i.exec(t))) {
+        var f = u("img", !1, {
+          src: c(e[2]),
+          alt: e[1],
+        });
+        e[1] && (f += u("figcaption", e[1])), (d += u("figure", f));
+      } else (e = o.exec(t)) && (d += e[0]);
+      e && (t = t.slice(e[0].length));
+    }
+    return d;
+  }
+  return e
+    ? l(t)
+    : (function t(e) {
+        var n = (e + "\n").split("\n"),
+          o = [],
+          i = "",
+          r = "",
+          a = "";
+        return (
+          n.forEach(function (e, n) {
+            var s = e.trim();
+            return "# " == s.slice(0, 2)
+              ? (a += u("h1", s.slice(2)) + "\n")
+              : "## " == s.slice(0, 3)
+              ? (a += u("h2", s.slice(3)) + "\n")
+              : "### " == s.slice(0, 4)
+              ? (a += u("h3", s.slice(4)) + "\n")
+              : "> " == s.slice(0, 2)
+              ? (r += t(s.slice(2)) + "\n")
+              : r
+              ? ((a += u("blockquote", r)), (r = ""))
+              : "```" == s.slice(0, 3)
+              ? (i && (a += u("pre", i.trim())), (i = !i))
+              : i
+              ? (!0 === i && (i = ""), (i += e + "\n"))
+              : void ("- " == s.slice(0, 2)
+                  ? o.push(s.slice(2))
+                  : o[0]
+                  ? ((a += (function (t) {
+                      var e = t.map(function (t) {
+                        return u("li", l(t));
+                      });
+                      return u("ul", e.join("\n"));
+                    })(o)),
+                    (o = []))
+                  : !s.startsWith("https://") ||
+                    s.includes("?") ||
+                    s.includes(" ")
+                  ? s[0] && (a += u("p", l(s)))
+                  : (a += u(
+                      "p",
+                      u("a", s, {
+                        href: s,
+                        target: "ext",
+                      })
+                    )));
+          }),
+          a
+        );
+      })(t);
 }
 function intToBinary(input) {
   var result = [];
@@ -375,7 +517,7 @@ function render(vlist, dom, ns) {
         if (
           targetName != "children" &&
           targetName != "key" &&
-          !(targetName in v.p)
+          !(propName in v.p)
         ) {
           node[targetName] = null;
         }
@@ -493,6 +635,7 @@ function App() {
   const [attributeInputs, setAttributeInputs] = useState({});
   const [newAttribute, setNewAttribute] = useState("");
   const [newValue, setNewValue] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
   const [selection, setSelection] = useState({ start: 0, end: 0 });
   const [isGenerating, setIsGenerating] = useState(false);
   const entity = id ? state.entities[id] : null;
@@ -605,6 +748,7 @@ function App() {
 
   function onNew() {
     setId(newId());
+    setIsEditing(true);
   }
 
   function onHome() {
@@ -666,6 +810,15 @@ function App() {
     setId("");
   }
 
+  function onEditSave() {
+    if (isEditing) {
+
+      setIsEditing(false);
+    } else {
+      setIsEditing(true);
+    }
+  }
+
   async function onAI() {
     if (selection.start === selection.end || isGenerating) return;
     setIsGenerating(true);
@@ -683,21 +836,55 @@ function App() {
     setSelection({ start: 0, end: 0 });
   }
 
+  function renderContent() {
+    const kind = entity.kind || "markdown";
+
+    if (kind == "raw") {
+      return h("pre", {k: "p-2"}, content);
+    } else if (kind == "secret") {
+      return h("div", {k: "p-2"}, [
+        h("label", {k:"label font-bold"}, [
+          h("span", {k: "mr-2"}, "username"),
+          h("a", {onclick: () => copy(entity.user || "")}, "copy"),
+        ]),
+        h("div", {k: "mb-4"}, entity.user || "-"),
+        h("label", {k:"label font-bold"}, [
+          h("span", {k: "mr-2"}, "password"),
+          h("a", {onclick: () => copy(entity.pass || "")}, "copy"),
+        ]),
+        h("div", {k: "mb-4"}, entity.pass || "-"),
+        h("label", {k:"label font-bold"}, ["otp"]),
+        h(Otp, {secret: entity.otp}),
+        h("div", {k: "mb-4"}, null),
+        h("label", {k:"label font-bold"}, ["notes"]),
+        h("pre", {k: "mb-4"}, entity.content || "-"),
+      ]);
+    } else {
+      return h("div", {k: "markdown border-b", innerHTML: markdown(content)});
+    }
+  }
+
   function renderEntity() {
+    const kind = entity.kind;
     return h("div", {k: "flex", style:"flex-direction:column;"}, [
-      h("input", {
-        k: "input border-b",
-        style: "font-size:22px;",
-        placeholder: "name",
-        value: title,
-        oninput: e => setTitle(e.target.value),
-        onchange: e => onChange("title", e.target.value),
-      }),
-      ...attributes.map((a, i) => {
+      h("div", {k:"flex items-center border-b"}, [
+        h("input", {
+          k: "input flex-1",
+          style: "font-size:22px;",
+          placeholder: "name",
+          value: title,
+          readOnly: !isEditing,
+          oninput: e => setTitle(e.target.value),
+          onchange: e => onChange("title", e.target.value),
+        }),
+        h("a", {k:"p-2", onclick: onEditSave}, isEditing ? "save":"edit"),
+      ]),
+      ...(kind == "secret" && !isEditing ? [] : attributes).map((a, i) => {
         return h("div", {k:"flex border-b", key: a}, [
           h("input", {
             k: "input flex-1 border-r",
             placeholder: "attribute",
+            readOnly: !isEditing,
             value: attributeInputs["a"+a]||"",
             oninput: e => setAttributeInputs({...attributeInputs, ["a"+a]: e.target.value}),
             onchange: e => onUpdateAttribute(a, e.target.value),
@@ -705,13 +892,14 @@ function App() {
           h("input", {
             k: "input flex-1",
             placeholder: "value",
+            readOnly: !isEditing,
             value: attributeInputs["v"+a]||"",
             oninput: e => setAttributeInputs({...attributeInputs, ["v"+a]: e.target.value}),
             onchange: e => onUpdateValue(a, e.target.value),
           }),
         ]);
       }),
-      h("div", {k:"flex border-b"}, [
+      isEditing ? h("div", {k:"flex border-b"}, [
         h("input", {
           k: "input flex-1 border-r",
           placeholder: "new attribute",
@@ -725,13 +913,13 @@ function App() {
           value: newValue,
           oninput: e => setNewValue(e.target.value),
         }),
-      ]),
-      h("textarea", {
+      ]) : null,
+      isEditing ? h("textarea", {
         k: "input border-b",
         style: "min-height:calc(100vh - "+(((attributes.length+1)*37)+129)+"px);resize:none;",
         placeholder: "content",
+        spellcheck: "false",
         value: content,
-        spellcheck: 'false',
         oninput: e => setContent(e.target.value),
         onchange: e => onChange("content", e.target.value),
         onselect: e => {
@@ -740,7 +928,7 @@ function App() {
             end: e.target.selectionEnd
           });
         },
-      }),
+      }) : renderContent(),
       entity ? h("div", { k: "flex border-b", style: "padding:4px 8px;font-size:14px;" }, [
         h("a", {
           k: "mr-2",
@@ -886,7 +1074,7 @@ function Password({ secret }) {
 }
 
 function Otp({ secret }) {
-  const [otp, setOtp] = useState("otp");
+  const [otp, setOtp] = useState("generate");
   async function onGenerate(e) {
     e.stopPropagation();
     e.preventDefault();
@@ -903,10 +1091,10 @@ async function onSetup(e) {
     if (e) e.preventDefault();
     let username = localStorage.username;
     if (!username) username = usernameField.value;
-    if (!username) return loading.innerText = "Missing username";
+    if (!username) return alert("missing username");
     let password;
     if (!password) password = passwordField.value;
-    if (!password) return loading.innerText = "Missing password";
+    if (!password) return alert("missing password");
     const usernameHash = await cryptoHash(username);
     const apiSalt = await cryptoHash("api" + usernameHash);
     const passwordSalt = await cryptoHash("password" + usernameHash);
@@ -969,8 +1157,7 @@ async function onSetup(e) {
     redraw();
   } catch (e) {
     console.error("Error", e);
-    loading.innerText = "Error decrypting";
-    loading.classList.add("error");
+    alert("error decrypting");
   }
 }
 

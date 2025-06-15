@@ -1,5 +1,5 @@
-const name = "everything-v13";
-const files = ["/"];
+const name = "everything-v14";
+const files = ["/", "Go-Mono.ttf", "Go-Mono-Bold.ttf"];
 self.addEventListener("install", (e) => {
   self.skipWaiting();
   e.waitUntil(caches.open(name).then((c) => c.addAll(files)));

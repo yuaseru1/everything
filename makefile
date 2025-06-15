@@ -4,3 +4,6 @@ dev:
 
 run:
 	env AWS_BUCKET=nervos AWS_ACCESS_KEY=$(HABARI_AWS_ACCESS_KEY) AWS_SECRET_KEY=$(HABARI_AWS_SECRET_KEY) go run main.go
+
+deploy:
+	echo "railway"

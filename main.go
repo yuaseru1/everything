@@ -48,13 +48,16 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		body, err := ioutil.ReadAll(r.Body)
 		check(err)
 		r.Body.Close()
-		checkpoint, err := strconv.Atoi(r.URL.Query().Get("checkpoint"))
-		check(err)
 		lock.Lock()
 		defer lock.Unlock()
 		data := string(awsGet(user)) + string(body)
 		awsPut(user, []byte(data))
 		datums := strings.Split(data, "\n")
+		checkpoint, err := strconv.Atoi(r.URL.Query().Get("checkpoint"))
+		check(err)
+		if checkpoint > len(datums) {
+			checkpoint = len(datums)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(strings.Join(datums[checkpoint:], "\n")))
 		log.Println("synced", user, checkpoint, len(datums), len(body))
