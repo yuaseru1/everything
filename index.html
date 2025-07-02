@@ -812,7 +812,6 @@ function App() {
 
   function onEditSave() {
     if (isEditing) {
-
       setIsEditing(false);
     } else {
       setIsEditing(true);
@@ -865,7 +864,7 @@ function App() {
   }
 
   function renderEntity() {
-    const kind = entity.kind;
+    const kind = entity?.kind;
     return h("div", {k: "flex", style:"flex-direction:column;"}, [
       h("div", {k:"flex items-center border-b"}, [
         h("input", {

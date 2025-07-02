@@ -1,4 +1,4 @@
-const name = "everything-v14";
+const name = "everything-v15";
 const files = ["/", "Go-Mono.ttf", "Go-Mono-Bold.ttf"];
 self.addEventListener("install", (e) => {
   self.skipWaiting();
